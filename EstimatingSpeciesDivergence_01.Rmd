@@ -1,0 +1,85 @@
+---
+title: "Estimating Species Divergence"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r include=FALSE}
+knitr::knit_hooks$set(inline = function(x) {
+prettyNum(x, big.mark=",")
+})
+suppressPackageStartupMessages(library(tidyverse))
+report<-read_lines("../data/oak_Qr.report")
+
+TotalSNPs<-report[report %>% str_detect("TotalSNPs")][1] %>% parse_number() 
+
+
+qLobataTotalLength<- str_split(report[report %>% str_detect("TotalLength")][1], "            ")[[1]][2] %>% parse_number()
+qRoburTotalLength<- str_split(report[report %>% str_detect("TotalLength")][1], "            ")[[1]][3] %>% parse_number()
+
+
+indelTableStart<-which(report %>% str_detect("TotalIndels"))[1]
+indelTableEnd<-which(report %>% str_detect("\\.A"))[1]
+
+#Manually Inputted From TotalIndelsChart
+qLobataInsertions<-1498237+1494711+0+541997+543067
+qRoburInsertions<-1434666+1433124+8695+534320+532012
+```
+
+
+
+
+# Computing Divergence from oak_Qr.report
+
+* First downloaded file Kirk and Sorel sent me "oak_Qr.report.gz." 
+* This output is from the package MUMmer. From the report, I can see whoever created the file used oak_14Aug2017.fa as the reference genome and Qrob_PM1N.fa as the Query Genome. 
+* This output is in a folder that appears to be the creation of the dnadiff function of MUMmer. I assume that the default settings were used. This means that "-rlTHC" flags were used when calling "TotalSNPS" and the 1-to-1 (.1delta) mapping was used when calling "TotalSNPS."
+    * The "-C" flag: "Do not report SNPs from alignments with an ambiguous mapping, i.e. only report SNPs where the [R] and [Q] columns equal 0 and do not output these columns. The -C option is a little confusing, but in simple terms it avoids calling SNPs from repetitive regions. "ambiguous mapping" refers to a position on the reference or query that is covered by more than one alignment. This can be caused by simple repeats, or overlapping alignments caused by tandem repeats that exist in different copy numbers. Either way, calling SNPs from these regions is questionable, and therefore the -C option should be invoked in most instances."
+    * I think this might work for the current back of the envelope calculations we are trying to compute right now. However, email chain Sorel forwarded from Corkus Shawn suggests this might not be stringent enough. 
+* Estimating Species divergence comes from "calculate d by taking a single sequence frome each species and counting the number of positions that differ between them, divided by the total number of aligned nucleotides" (Hahn pg 135). Alignments with a gap (indels) in either species should be ignored. 
+* Total Number of SNPs listed in the table for both Quercus robur and Quercus lobata is: `r as.character(TotalSNPs)`.
+* The total number of aligned nucleotides across species is trickier to find. The report has the total length of 1-to-1 alignment for Quercus lobata to be: `r as.character(qLobataTotalLength)`. and the total aligned length for Quercus robur to be `r as.character(qRoburTotalLength)`. Their length differs by `r as.character(qLobataTotalLength-qRoburTotalLength)`.
+    * Dividing the total number of SNPs by Quercus robur length would estimate divergence as: `r as.character(TotalSNPs/qRoburTotalLength)`.
+    * Dividing the total number of SNPs by Quercus lobata length would estimate divergence as: `r as.character(TotalSNPs/qLobataTotalLength)`.
+    * I think that the `r as.character(qLobataTotalLength-qRoburTotalLength)` difference in length is mostly due to their being more aligned insertions in the Q lobata genome.
+        * There are `r as.character(qLobataInsertions)` bases inserted in the Q lobata genome with regard to the the Q robur genome. 
+        * There are `r as.character(qRoburInsertions)` bases inserted in the Q robur genome with regard to the the Q lobata genome.
+        * This leads to `r as.character(qLobataInsertions)` - `r as.character(qRoburInsertions)` = `r as.character(qLobataInsertions-qRoburInsertions)` extra insertions in the Q lobata genome.
+        * This accounts for most of the difference in length of the alignments. However, not all. 
+* Subtracting the insertions we get Quercus robur to have an aligned length of: `r as.character(qRoburTotalLength-qRoburInsertions)` and Quercus lobata to have an aligned length of `r as.character(qLobataTotalLength-qLobataInsertions)`. The difference between sizes is now `r as.character((qLobataTotalLength-qLobataInsertions)-(qRoburTotalLength-qRoburInsertions)) `. 
+    * Estimating divergence from the Quercus robur length without its insertions would be: `r as.character(TotalSNPs/(qRoburTotalLength-qRoburInsertions))`.
+    * Estimating divergence from the Quercus lobata length without its insertions would be: `r as.character(TotalSNPs/(qLobataTotalLength-qLobataInsertions))`
+    
+
+# Computing Divergence By realigning reference genomes and calling SNPs
+* To ensure that the TotalSNPs in the included report wasn't inflated by repeats and the -C flag was used I ran the show-snps script. 
+    * Hard to find but I downloaded the "oak_14Aug2017.fa" reference genome from: ftp://ftp.ccb.jhu.edu/pub/dpuiu/Valley_oak/DovetailC/OLD/
+    * I edited the oak_Qr.1delta file to include correct paths to the reference genomes. 
+    * Ran show-snps with the -C flag and the -x 100 flag to include the context of SNPs. I do this so I can see if filtering SNPs with nearby "N" drastically alters results.
+    * /u/home/j/jessegar/project-klohmuel/oakTrees/bin/show-snps -CITl -x 100 oak_Qr.1delta > oak_Qr.1SNPS_NoRepeatsNoIndels
+* I came up with the same number of TotalSNPs as the report file. Appears the default setting/-C flag was used. 
+* 2,302 SNPs are within 100bp of N in Q lobata
+* 75,691 SNPs are within 100bp of  N in Q robur
+* 76,353 SNPs are within 100bp of N in both Q lobata and Q robur
+* 12,055,594 are not within 100bp of N in both Q lobata and Q robur 
+* Dividing this new Total Number of SNPs by the Q Robur length without insertions we get 0.02362622
+* Dividing this new Total Number of SNPs by the Q Lobata length without insertions we get 0.02362601
+
+
+```{r include=F}
+# test %>% mutate(QLobContextHasN=str_detect(V9,"N")) -> test
+# test %>% mutate(QRobContextHasN=str_detect(V10,"N")) -> test
+# 
+# 
+# 12131947-12055594
+# 12131947-12055594
+# 
+# (TotalSNPs-76353)/(qRoburTotalLength-qRoburInsertions)
+# (TotalSNPs-76353)/(qLobataTotalLength-qLobataInsertions)
+
+```
+
+

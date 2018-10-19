@@ -1,0 +1,350 @@
+---
+title: "Oak Tree Alignments"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+
+
+
+
+```{r include=F}
+library(tidyverse)
+library(Biostrings)
+library(data.table)
+```
+
+
+
+# Reading in data table from Email and associated Nucmer alignment files
+
+```{r}
+
+# Table comes from email Sorel Sent October 15,2018. Manually added "|" for easy split. 
+# Refers to chromosome and  matching scaffold names.
+# "You'll need to "reverse complement" the coordinates for the ones that say "Reversed", i.e. Subtract the positions from the length of the chromosome (lengths listed below too)."
+ 
+
+scaffoldNamesManuallyEdited<-">chr1 Reversed: | Scq3eQI_240;HRSCAF=820
+>chr2 Reversed: | Scq3eQI_1869;HRSCAF=2693
+>chr3 Reversed: | Scq3eQI_2027;HRSCAF=3423
+>chr4 | Scq3eQI_2026;HRSCAF=3421
+>chr5 | Scq3eQI_2018;HRSCAF=3193
+>chr6 | Scq3eQI_2028;HRSCAF=3424
+>chr7 Reversed: | Scq3eQI_27
+>chr8 | Scq3eQI_103;HRSCAF=384
+>chr9 Reversed: | Scq3eQI_316;HRSCAF=953
+>chr10 | Scq3eQI_174;HRSCAF=633
+>chr11 Reversed: | Scq3eQI_1982;HRSCAF=3004
+>chr12 | Scq3eQI_304;HRSCAF=933
+"
+
+#Looks like 2018 reference genome uses the whole line as a name. 
+#Not just the chromosome part. So copying and pasting the table again without editing
+
+scaffoldNamesNotEdited<-">chr1 Reversed: Scq3eQI_240;HRSCAF=820
+>chr2 Reversed: Scq3eQI_1869;HRSCAF=2693
+>chr3 Reversed: Scq3eQI_2027;HRSCAF=3423
+>chr4 Scq3eQI_2026;HRSCAF=3421
+>chr5 Scq3eQI_2018;HRSCAF=3193
+>chr6 Scq3eQI_2028;HRSCAF=3424
+>chr7 Reversed: Scq3eQI_27
+>chr8 Scq3eQI_103;HRSCAF=384
+>chr9 Reversed: Scq3eQI_316;HRSCAF=953
+>chr10 Scq3eQI_174;HRSCAF=633
+>chr11 Reversed: Scq3eQI_1982;HRSCAF=3004
+>chr12 Scq3eQI_304;HRSCAF=933
+"
+
+wholeScaffoldNames<-read_table(scaffoldNamesNotEdited, col_names = F) %>%
+  dplyr::rename(QLobata2018Names=X1) %>%
+  mutate(QLobata2018Names=str_replace(QLobata2018Names, ">", "")) %>%
+  pull(QLobata2018Names)
+
+
+
+
+# Table comes from email Sorel Sent October 15,2018. Manually added "Reversed:" if needed
+# for easy join with scaffoldDf. 
+# Refers to chromosome and  matching scaffold names.
+chromosomesAndTheirSize<-">chr1 Reversed:	55683757
+>chr2 Reversed:	104436548
+>chr3 Reversed:	74551540
+>chr4	97794414
+>chr5	89479036
+>chr6	54021141
+>chr7 Reversed:	49020089
+>chr8	65456833
+>chr9 Reversed:	55012092
+>chr10	66423012
+>chr11 Reversed:	57729484
+>chr12	43132062
+"
+
+scaffoldDf<-read_table(scaffoldNamesManuallyEdited, col_names=F)
+
+scaffoldDf<-scaffoldDf %>% 
+  separate(X1, into = c("Chromosome", "Scaffold"), sep="\\|") %>%
+  mutate(Chromosome=str_squish(Chromosome), Scaffold=str_squish(Scaffold)) %>%
+  mutate(Reversed=str_detect(Chromosome, "Reversed")) %>%
+  mutate(QLobata2018Names=wholeScaffoldNames)
+
+
+chromoseSizeDf<-read_delim(chromosomesAndTheirSize, col_names = F, delim="\t") %>%
+  dplyr::rename(Chromosome=X1, Length=X2)
+
+
+
+scaffoldDf<-left_join(scaffoldDf,chromoseSizeDf, by=c("Chromosome"="Chromosome"))
+
+alignment<-read_delim("../data/oak_Qr.1coords", delim="\t", col_names = F)
+
+
+
+
+#https://github.com/mummer4/mummer/blob/master/MANUAL.md under "show-coords" you can
+#Find a more detailed explanation of columns
+#Email Chain suggests this is the headers for the oak_Qr.1coords. Basically right.
+#qBeg qEnd sBeg sEnd qAligned sAligned %ID qLength sLength qSomething sSomething query subject"
+
+
+
+alignment<-alignment %>%
+  dplyr::rename(QLobataStart=X1, QLobataEnd=X2, QRoburStart=X3, QRoburEnd=X4,
+         QLobataLengthAligned=X5, QRoburLengthAligned=X6, PercentIdentity=X7,
+     QLobataScaffoldLength=X8, QRoburScaffoldLength=X9, 
+     QLobataPercentCoverage=X10, QRoburPercentCoverage=X11, 
+     QLobata2017Names=X12, QRobur=X13 )
+
+
+
+
+```
+
+
+# Using the scaffoldDf to translate the  2017 alignment to 2018 reference genome alignment. 
+
+Many scaffolds from 2017 don't have a specific name translation that is recorded in the scaffoldDf. I think this is because the names haven't changed and they are the same in 2018 as they were in 2017. Therefore, after merging alignment and scaffoldDf, if an alignement has QLobata2018Names set to NA, I assume the QLobata2017Name is the correct name. 
+
+
+
+
+
+```{r}
+
+
+#Chromsome 7 Is interesting because in the 2017 QLobata genome it is named as:
+#"Scq3eQI_27;HRSCAF=100" 
+#However, in the chrName to ScaffoldName and orientation it is named as:
+#"Scq3eQI_27"
+#This causes matching errors to occur. In order to fix this we will go through QLobata2017Names and change all "Scq3eQI_27;HRSCAF=100" values to be "Scq3eQI_27"
+
+
+alignment$QLobata2017Names<-case_when(
+alignment$QLobata2017Names=="Scq3eQI_27;HRSCAF=100" ~ "Scq3eQI_27",
+TRUE ~ alignment$QLobata2017Names
+)
+
+
+
+
+
+
+alignment<-left_join(alignment, scaffoldDf, by=c("QLobata2017Names"="Scaffold")) %>%
+  dplyr::rename(QLobata2018Chromosome=Chromosome)
+
+#If No 2018 Translation, Use the 2017 Name. Remove semicolons in 2017 Names because they not there in 2018 genome. 
+
+removedSemicolons<-str_replace(alignment$QLobata2017Names, 
+                               pattern=";", replacement = " ")
+alignment$QLobata2018Names<-coalesce(alignment$QLobata2018Names,removedSemicolons)
+
+#If no indication Reversed (NA), assume not Reversed. This should only affect alignments
+# with 2017 scaffolds and not 2018 translations. 
+
+
+alignment$Reversed<-alignment$Reversed %>% replace_na(FALSE)
+
+
+
+table(alignment$QLobata2018Names)
+```
+
+
+
+
+
+# Now I think we have an alignment dataframe that is more detailed and complete. 
+
+Still need to figure out what to do with reversed scaffolds
+```{r}
+alignment %>% print(n=5)
+```
+
+
+# Now I need to get it to work on "reversed" chromosomes. 
+
+Create a new 2018 Start (QLobata2018Start) and End (QLobata2018End). 
+
+For all 2018 Alignments that are on a chromsome that has been reversed, got the Length of the entire chromosome, then subtracted the alignment start and then added 1. Did the same for the alignment ends. 
+
+If not reversed just use the original alignment starts and ends
+
+
+```{r}
+
+#If Reversed Length - Start of Alignment + !
+alignmentReversed<-alignment %>% 
+  filter(Reversed == TRUE) %>%
+  mutate(QLobata2018Start=Length-QLobataStart+1) %>%
+  mutate(QLobata2018End=Length-QLobataEnd+1) 
+
+#If Not reversed just use the original starts and ends
+alignmentNotReversed<-alignment %>% 
+  filter(Reversed == FALSE) %>%
+  mutate(QLobata2018Start=QLobataStart) %>%
+  mutate(QLobata2018End=QLobataEnd) 
+
+
+
+alignment<-bind_rows(alignmentReversed,alignmentNotReversed)
+
+```
+
+
+
+# Sanity check to make sure alignments look reasonable. 
+
+1. Check when Start > End
+
+2. Check when "Reversed"
+
+3. Check when "Reversed" has Start > End
+
+4. Check normal alignment
+
+5. Check when no new name for 2018
+
+6. Check 5 Random Ones
+
+
+
+```{r}
+qLobata2018Reference<-"../data/Qlobata.v3.0.mainChrs.fasta"
+qRoburReference<-"../data/Qrob_PM1N.fa"
+qLobata2017Reference<-"../data/oak_14Aug2017.fa"
+
+
+qLobata2018Reference<-readDNAStringSet(qLobata2018Reference)
+qLobata2017Reference<-readDNAStringSet(qLobata2017Reference)
+qRoburReference<-readDNAStringSet(qRoburReference)
+
+
+getSequenceFromReference<-function(referenceGenome, scaffoldName, start, end){
+  #If start is bigger than end, I think aligns to other strand. Change start and end and 
+  # Reverse complement
+  if (start > end){
+    temp<-start
+    start<-end
+    end<-temp
+    dna<-subseq(referenceGenome[scaffoldName], start=start, end=end)
+    reversedDNA<-reverseComplement(dna)
+    return(reversedDNA)
+  } else {
+    dna<-subseq(referenceGenome[scaffoldName], start=start, end=end)
+    return(dna)
+  }
+  
+  
+}
+possibly_getSequenceFromReference<-possibly(getSequenceFromReference, otherwise=NA )
+
+
+
+
+
+QRoburSeqAlignments<-alignment %>% rowwise() %>% do(
+  as_tibble(as.character(getSequenceFromReference(referenceGenome = qRoburReference, 
+                           scaffoldName = .$QRobur,
+                           start=.$QRoburStart,
+                           end=.$QRoburEnd)))
+) %>% dplyr::rename(QRoburSeqAlignments=value)
+
+
+QLobata2018SeqAlignments<-alignment %>% rowwise() %>% do(
+  as_tibble(as.character(possibly_getSequenceFromReference(referenceGenome = qLobata2018Reference,                   scaffoldName = .$QLobata2018Names,
+                           start=.$QLobata2018Start,
+                           end=.$QLobata2018End)))
+)  %>% dplyr::rename(QLobata2018SeqAlignments=value)
+
+
+
+
+test=bind_cols(alignment, QLobata2018SeqAlignments, QRoburSeqAlignments)
+
+
+
+#fwrite(test, "../data/CoordinatesAndAlignmentsForQRoburAndQLobata_Oct172018.csv")
+
+```
+1. Check when Start > End
+
+```{r}
+test %>% 
+  filter(QLobata2018Start > QLobata2018End) %>% 
+  dplyr::slice(1) %>%
+  select(QLobata2018SeqAlignments, QRoburSeqAlignments)
+```
+
+
+2. Check when "Reversed"
+
+```{r}
+
+test %>% 
+  filter(Reversed==TRUE) %>% 
+  dplyr::slice(10) %>%
+  select(QLobata2018SeqAlignments, QRoburSeqAlignments)
+
+```
+
+3. Check when "Reversed" has Start > End
+```{r}
+test %>% 
+  filter(Reversed==TRUE, QLobata2018Start > QLobata2018End) %>% 
+  dplyr::slice(15) %>%
+  select(QLobata2018SeqAlignments, QRoburSeqAlignments)
+
+```
+
+4. Check normal alignment
+```{r}
+test %>% 
+  filter(Reversed==FALSE, !is.na(QLobata2018SeqAlignments)) %>% 
+  dplyr::slice(24) %>%
+  select(QLobata2018SeqAlignments, QRoburSeqAlignments)
+```
+
+5. Check when no new name for 2018. Nothing exists with ../data/Qlobata.v3.0.mainChrs.fasta because only chromosomes are in
+```{r}
+test %>% 
+  filter(is.na(QLobata2018Chromosome), !is.na(QLobata2018SeqAlignments)) %>% 
+  dplyr::slice(1:10) %>%
+  select(QLobata2018SeqAlignments, QRoburSeqAlignments)
+```
+
+6. Check 5 Random Ones
+```{r}
+test %>% sample_n(5) %>%
+  select(QLobata2018SeqAlignments, QRoburSeqAlignments)
+```
+ 7. Checking Chromsome 7
+```{r}
+test %>% 
+  filter(QLobata2018Names == "chr7 Reversed: Scq3eQI_27") %>%
+  select(QLobata2018SeqAlignments, QRoburSeqAlignments)
+
+
+```
+
