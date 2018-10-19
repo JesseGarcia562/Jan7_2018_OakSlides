@@ -60,6 +60,22 @@ day<-day(Sys.Date())
 fileName<-glue("../data/vcfOfAlignments_{month}{day}.csv")
 #fwrite(vcf, fileName)
 
-vcf %>% filter(qLobataSeq != "N", qRoburSeq != "N")
+
+```
+
+
+# Newest Estimate of divergence
+
+```{r}
+vcf<-vcf %>% 
+  filter(qLobataSeq != "N", 
+         qRoburSeq != "N", 
+         qLobataSeq != "-", 
+         qRoburSeq != "-")
+
+matches<-sum(vcf$qLobataSeq == vcf$qRoburSeq)
+mismatches<-sum(vcf$qLobataSeq != vcf$qRoburSeq)
+
+mismatches/(matches+mismatches)
 ```
 
