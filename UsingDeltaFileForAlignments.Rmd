@@ -1,0 +1,182 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#Using mummers delta file for alignments. 
+
+```{r}
+module load R/3.5.0
+cd /u/home/j/jessegar/project-klohmuel/oakTrees/code
+R
+
+
+library(tidyverse)
+library(glue)
+library(Biostrings)
+library(data.table)
+library(furrr)
+library(GenomicRanges)
+```
+
+
+
+#Creating alignments.
+```{r}
+
+
+
+plan(multiprocess)
+deltaFile<-"/u/flashscratch/j/jessegar/forJesse/data_from_sorel/QrobToQlobNucmer/oak_Qr.1delta"
+showAlign<-"/u/home/j/jessegar/project-klohmuel/oakTrees/mummer-4.0.0beta2/show-aligns"
+
+delta<-as_tibble(fread(deltaFile, header = F))
+
+alignPairs<-delta$V1 %>% str_subset(">") %>% str_remove(">") %>% str_split(" ")
+alignPairs<-alignPairs %>% map_df(~  as_tibble(matrix(.x[1:2], nrow=1, ncol=2) ) )
+alignPairs<-alignPairs %>% dplyr::rename(QLobata=V1, QRobur=V2)
+
+alignPairs<-alignPairs %>% mutate(deltaFile=deltaFile, showAlign=showAlign)
+
+alignPairs<-alignPairs %>% mutate(command=glue("{showAlign} {deltaFile} '{QLobata}' '{QRobur}' > '../data/{QLobata}Alignment{QRobur}.alignmentFile'"))
+
+alignPairs$command %>% future_map(~system(.x), .progress=T)
+```
+
+
+
+#Reading in alignment file
+```{r}
+files<-list.files("../data/", "alignmentFile", full.names = T)
+
+
+
+
+df<-as_tibble(read_lines(files[1]))
+
+df$alignment<-df$value %>%   map_lgl(~ str_detect(.x, "^[0-9]+\\s+[atcgnATCGN\\.]") ) 
+df<-df %>% unnest(alignment) 
+numberOfAlignments<-sum(df$alignment)/2
+
+####Extracting Scaffolds
+qLobata2017Name<-str_split(string=str_squish(df$value[4]),pattern= " ",simplify = T )[4]
+qRoburName<-str_split(string=str_squish(df$value[4]),pattern= " ",simplify = T )[6]
+
+
+
+
+#####Creating seperate df for each species. 
+species<-rep(c("QLobata", "QRobur") , times=numberOfAlignments  )
+allAlignments<-df %>% filter(alignment==TRUE) %>% mutate(species=species, value=str_squish(value))
+qLobataAlignments<-allAlignments %>% 
+  filter(species=="QLobata") %>% 
+  separate(value, sep=" ", into=c("QLobata2017Start", "sequence") , convert=TRUE) %>%
+  mutate(qLobata2017Name=qLobata2017Name, sequenceLength=str_length(sequence))
+
+qRoburAlignments<-allAlignments %>% 
+  filter(species=="QRobur")%>% 
+  separate(value, sep=" ", into=c("QRoburStart", "sequence"), convert=TRUE) %>%
+  mutate(qRoburName=qRoburName, sequenceLength=str_length(sequence))
+
+
+
+
+
+
+
+```
+
+
+
+
+## Reading in Q Robur bed file of repeats and N
+- Q Robur has right names!
+
+```{r}
+qRoburRepeats<-"../data/Qrob_PM1N.runs-of-SJCdeNovoRptModelRptMask-and-Ns.UCSCbed4.txt"
+qRoburRepeats<-fread(qRoburRepeats)
+qRoburRepeats <- qRoburRepeats %>% dplyr::rename(QRoburName=V1, Start=V2, End=V3, Annotation=V4)
+qRoburRepeatsAndNGRange<-GRanges(seqnames=qRoburRepeats$QRoburName,IRanges(start=qRoburRepeats$Start, end=qRoburRepeats$End), Annotation=qRoburRepeats$Annotation)
+
+
+
+```
+
+
+## Annotating Q Robur Alignments with Repeat or not. If repeat in Q Robur, probably repeat in Q Lobata. 
+- First create ranges
+
+
+```{r}
+qRoburAlignmentsRanges<-GRanges(seqnames=qRoburAlignments$qRoburName, IRanges(start=qRoburAlignments$QRoburStart, end=qRoburAlignments$QRoburStart + qRoburAlignments$sequenceLength))
+
+notInARepeatOrN<-qRoburAlignmentsRanges %outside% qRoburRepeatsAndNGRange 
+
+qRoburAlignments$notInARepeatOrN<-notInARepeatOrN
+
+qLobataAlignments$notInARepeatOrN<-notInARepeatOrN
+
+
+
+```
+
+## Now just subset alignments that aren't a repeat or in a run of N and compute hamming distance?
+
+```{r}
+
+
+qRoburAlignmentsFiltered<-qRoburAlignments %>% filter(notInARepeatOrN == TRUE)
+qLobataAlignmentsFiltered<-qLobataAlignments %>% filter(notInARepeatOrN == TRUE)
+
+
+
+
+##Function drafting here. 
+qLobataSequence<-qLobataAlignmentsFiltered$sequence[1]
+qRoburSequence<-qRoburAlignmentsFiltered$sequence[1]
+
+
+qLobataSequence<-unlist(str_split(string=qLobataSequence,pattern = ""))
+
+
+qRoburSequence<-unlist(str_split(string=qRoburSequence,pattern = ""))
+
+
+pairwiseAlignmentDf<-
+  tibble(
+    qLobataSequence=qLobataSequence,
+    qRoburSequence=qRoburSequence
+  )
+
+
+
+
+pairwiseAlignmentDf<-pairwiseAlignmentDf %>% 
+  mutate(qLobataN=str_detect(qLobataSequence, "n|N"), 
+         qRoburN=str_detect(qRoburSequence, "n|N"), 
+         qLobataInsertion=str_detect(qRoburSequence, "\\."),
+         qRoburInsertion=str_detect(qLobataSequence, "\\."),
+         )
+
+pairwiseAlignmentDfFiltered<-pairwiseAlignmentDf %>% filter(qLobataN == FALSE, qRoburN == FALSE, qLobataInsertion == FALSE, qRoburInsertion == FALSE)
+
+filteredAlignedSequence<-nrow(pairwiseAlignmentDfFiltered)
+
+matches<-sum(pairwiseAlignmentDfFiltered$qLobataSequence == pairwiseAlignmentDfFiltered$qRoburSequence)
+mismatches<-sum(pairwiseAlignmentDfFiltered$qLobataSequence != pairwiseAlignmentDfFiltered$qRoburSequence)
+
+
+divergenceMetadata<-
+  tibble(
+    matches=matches,
+    mismatches=mismatches,
+    qLobataN=sum(pairwiseAlignmentDf$qLobataN),
+    qRoburN=sum(pairwiseAlignmentDf$qRoburN),
+    qLobataInsertion=sum(pairwiseAlignmentDf$qLobataInsertion),
+    qRoburInsertion=sum(pairwiseAlignmentDf$qRoburInsertion),
+    unfilteredAlignmentLength=nrow(pairwiseAlignmentDf),
+    filteredAlignmentLength=filteredAlignedSequence
+  )
+
+```
+

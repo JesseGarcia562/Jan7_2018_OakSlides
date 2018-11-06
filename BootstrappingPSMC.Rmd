@@ -1,0 +1,230 @@
+---
+title: "BootstrappingPSMC"
+author: "Jesse Garcia"
+date: "10/25/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(glue)
+```
+
+
+## These packages are loaded on hoffman
+module load python/3.4
+module load R/3.5.0
+module load gcc/4.9.3
+
+
+Creating the 100 Bootstraps
+```{r cars}
+msmc="/u/home/j/jessegar/project-klohmuel/msmc-master/msmc"
+bootstrapMSMC="/u/home/j/jessegar/project-klohmuel/msmc-tools/multihetsep_bootstrap.py"
+qlobInput="/u/flashscratch/z/zhen/forJesse/Qlob_PSMC/inputFiles"
+output="$SCRATCH/Bootstraps/qlob_bootstraps"
+qlobMultiHet<-list.files(qlobInput, "postMultiHetSep.txt", full.names = T)
+qlobMultiHet<-paste0(qlobMultiHet,collapse=" ")
+
+command<-glue("python3 {bootstrapMSMC} -n 100 --seed 3 --nr_chromosomes 12 {output} {qlobMultiHet}")
+
+system(command)
+
+
+
+
+```
+
+
+## Creating Job Array 
+
+```{r pressure, echo=FALSE}
+
+library(tidyverse)
+library(glue)
+
+SGETaskID<-parse_integer(Sys.getenv("SGE_TASK_ID"))
+
+
+
+msmc="/u/home/j/jessegar/project-klohmuel/msmc-master/msmc"
+bootstrapLocation<-"/u/flashscratch/j/jessegar/Bootstraps/"
+folders<-list.dirs(bootstrapLocation, recursive = FALSE)
+bootstrapNumber<-parse_number(folders)
+bootstrapDF<-tibble(
+  inputFolders=folders,
+  number=bootstrapNumber, 
+  outputFolders=folders
+) %>% 
+  arrange(number)
+
+
+
+bootstrapDF<-bootstrapDF %>% 
+  mutate(MSMCCommand=glue("{msmc} -t 12 -o {outputFolders}/oak.msmc.out {inputFolders}/bootstrap_multihetsep.chr*.txt")) 
+
+glue("Command running: 
+     {bootstrapDF$MSMCCommand[SGETaskID]}
+     ")
+
+
+system(bootstrapDF$MSMCCommand[SGETaskID])
+```
+
+## Plotting PSMC Bootstraps
+
+```{r}
+library(tidyverse)
+library(glue)
+
+
+bootstrapDirectory<-"/u/flashscratch/j/jessegar/Bootstraps/"
+bootstrapDirectory<-list.dirs(bootstrapDirectory, recursive = F)
+bootstrapNumber<-parse_number(bootstrapDirectory)
+
+bootstrapDF<-tibble(
+  directory=bootstrapDirectory,
+  Type="Bootstrapped Chromosomes",
+  bootstrapNumber=bootstrapNumber
+) %>% 
+  arrange(bootstrapNumber)
+
+bootstrapDF$MSMCOut<-bootstrapDF$directory %>% map(~list.files(.x, "oak.msmc.out.final.txt", full.names = TRUE))
+
+bootstrapDF<-bootstrapDF %>% unnest(MSMCOut)
+
+bootstrapDF$MSMCOut<-bootstrapDF$MSMCOut %>% map(~read_delim(.x, delim="\t"))
+
+bootstrapDF<-bootstrapDF %>% unnest(MSMCOut)
+
+empiricalDF<-tibble(
+  directory="/u/flashscratch/z/zhen/forJesse/Qlob_PSMC/output_20180613",
+  Type="Empirical Chromsomes", 
+)
+
+empiricalDF$MSMCOut<-list(read_delim("/u/flashscratch/z/zhen/forJesse/Qlob_PSMC/output_20180613/oak.msmc.out.final.txt", delim="\t"))
+empiricalDF<-empiricalDF %>% unnest(MSMCOut)
+
+
+simulationDF<-tibble(
+  directory="/u/flashscratch/z/zhen/forJesse/pi_sim/Qlob.psmc.2.5e-09/group_1.Qlob.psmc.2.5e-09/msmcAnalysis/output_20180921",
+  Type="Simulated Chromosomes"
+)
+
+simulationDF$MSMCOut<-list(read_delim("/u/flashscratch/z/zhen/forJesse/pi_sim/Qlob.psmc.2.5e-09/group_1.Qlob.psmc.2.5e-09/msmcAnalysis/output_20180921/oak.msmc.out.final.txt", delim="\t"))
+simulationDF<-simulationDF %>% unnest(MSMCOut)
+
+
+mu <- 2.5e-09
+gen <- 100
+
+bind_rows(empiricalDF,bootstrapDF,simulationDF) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize, group=directory, colour=Type)) + 
+  geom_step() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size", 
+       title="Q Lobata PSMC' Inference (Mutation Rate = 2.5e-09/bp/gen & Generation Time = 100 years)",
+       colour="Data Type")
+
+
+
+
+plot<-bootstrapDF %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize, group=bootstrapNumber)) + 
+  geom_line() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10')
+
+
+
+
+```
+
+
+
+## Looking at Settings of PSMC on QRobur
+
+```{r}
+directories<-"../data/PSMCTroubleshooting/DifferentPSMCSettings/"
+directories<-list.dirs(directories, recursive = F)
+
+
+directoriesDf<-tibble(
+  directories=directories,
+  Type="Simulated"
+)
+
+
+directoriesDf$files<-directoriesDf$directories %>% map(~list.files(path=.x,pattern="Qrob.oak.msmc.out.final.txt",  full.names = T)) 
+directoriesDf<-directoriesDf %>% unnest(files)
+directoriesDf$files <- directoriesDf$files %>% map(~read_delim(file=.x, delim="\t", col_names = T)) 
+directoriesDf<-directoriesDf %>% unnest(files)
+
+mu <- 2.5e-09
+gen <- 100
+
+
+directoriesDf %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize, colour=directories)) + 
+  geom_step() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size", 
+       title="Q Robur PSMC' Inference (Mutation Rate = 2.5e-09/bp/gen & Generation Time = 100 years)",
+       colour="Data Type")
+
+
+realQRobur<-"../data/PSMCTroubleshooting/Qrob_PSMC/output_20180802/oak.msmc.out.final.txt"
+realQRoburDf<-tibble(
+  directories=realQRobur,
+  Type="Empirical"
+)
+realQRoburDf$files<- realQRoburDf$directories %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+realQRoburDf<-realQRoburDf %>% unnest(files)
+
+
+bind_rows(realQRoburDf, directoriesDf)%>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize, colour=directories)) + 
+  geom_step() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size", 
+       title="Q Robur PSMC' Inference (Mutation Rate = 2.5e-09/bp/gen & Generation Time = 100 years)",
+       colour="Data Type")
+
+
+```
+## Adding already done simulations to see if the fit is better. Looks like max iterations to 50 is good?
+
+```{r}
+
+alreadyDoneSimulation<-"../data/PSMCTroubleshooting/pi_sim/Qrob.psmc.2.5e-09/group_1.Qrob.psmc.2.5e-09/msmcAnalysis/output_20180921/oak.msmc.out.final.txt"
+
+
+alreadyDoneSimulation<-read_delim(alreadyDoneSimulation, delim="\t", col_names = T)
+alreadyDoneSimulation<-alreadyDoneSimulation %>% mutate(Type="Simulated", directories="One Ying Already Did (Max Iterations 20)")
+
+
+
+bind_rows(realQRoburDf, directoriesDf,alreadyDoneSimulation)%>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize, colour=directories)) + 
+  geom_step(aes(linetype=Type)) +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size", 
+       title="Q Robur PSMC' Inference (Mutation Rate = 2.5e-09/bp/gen & Generation Time = 100 years)",
+       colour="Data Type")
+```
+
+

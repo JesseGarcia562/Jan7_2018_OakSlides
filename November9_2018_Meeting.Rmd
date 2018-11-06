@@ -1,0 +1,203 @@
+---
+title: "November9_2018_Meeting"
+author: "Jesse Garcia"
+date: "11/6/2018"
+output: beamer_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+knitr::opts_chunk$set(dev = 'pdf')
+
+library(tidyverse)
+library(glue)
+```
+
+## Different iterations on Q Lobata on empirical data
+I think changing maxIterations changes the inference a lot. 
+
+```{r}
+folder="../data/PSMCTroubleshooting/DifferentPSMCSettings/QLobataSimulationsMaxIterations/"
+files<-list.files(folder, "oak.msmc.out.final.txt", full.names = T)
+
+iterations<-parse_number(str_extract(files, "Qlob[0-9]*"))
+
+qLobataSims<-tibble(
+  files=files, 
+  iterations=glue("MaxIterations Set to {iterations}"),
+  Type="New inference with different MaxIterations"
+)
+
+levels=c("MaxIterations Set to 20", "MaxIterations Set to 50", "MaxIterations Set to 100", "MaxIterations Set to 150", "MaxIterations Set to 200", "MaxIterations Set to 300")
+
+
+
+
+
+
+qLobataSims<- qLobataSims %>%
+  mutate(iterations=factor(iterations, levels=levels))
+
+
+qLobataSims$files<-qLobataSims$files %>% map(~read_delim(.x, delim="\t", col_names = T))
+
+mu <- 2.5e-09
+gen <- 100
+
+qLobataSims<-qLobataSims %>% 
+  unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) )
+
+realQLobata<-"../data/PSMCTroubleshooting/Qlob_PSMC/output_20180613/oak.msmc.out.final.txt"
+realQLobataDf<-tibble(
+  directories=realQLobata,
+  Type="True Simulated Demography (Inferred Empirical Demography)"
+)
+realQLobataDf$files<- realQLobataDf$directories %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+realQLobataDf<-realQLobataDf %>% unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  select(-directories)  
+
+  
+  ggplot(data=qLobataSims, aes(x=Time, y=EffectivePopulationSize, colour=Type)) + 
+  geom_step(data=realQLobataDf, aes(x=Time, y=EffectivePopulationSize)) + 
+  geom_step() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  theme(legend.position="bottom") + 
+  facet_wrap(~iterations, nrow=1) +
+  labs(x="Years Ago", y="Effective Population Size", 
+       title=glue("Q. Lobata PSMC' Inference With Different MaxIterations") ,
+       colour="Data Type")  + theme_bw()
+
+
+#ggsave("../analysis/MaxIterationsPreliminary_QLobata_Nov5.pdf", width = 30, height=10)
+```
+
+
+
+##Using Q Robur MS Simulations with default magic settings
+MS doesn't seem to improve the fit. It's worse 
+```{r}
+folder="../data/PSMCTroubleshooting/TryingMSSimulations/QRobur//"
+files<-list.files(folder, "oak.msmc.out.final.txt", full.names = T)
+iterations<-parse_number(str_extract(files, "Qrob[0-9]*"))
+
+
+
+
+qRoburSims<-tibble(
+  files=files, 
+  iterations=glue("MaxIterations Set to {iterations}"),
+  Type="New inference with MS As simulator"
+)
+
+
+
+qRoburSims$files<-qRoburSims$files %>% map(~read_delim(.x, delim="\t", col_names = T))
+
+mu <- 2.5e-09
+gen <- 75
+
+qRoburSims<-qRoburSims %>% 
+  unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  mutate(iterations=factor(iterations, levels=levels))
+
+realQRobur<-"../data/PSMCTroubleshooting/Qrob_PSMC/output_20180802/oak.msmc.out.final.txt"
+realQRoburDf<-tibble(
+  directories=realQRobur,
+  Type="True Simulated Demography (Inferred Empirical Demography)"
+)
+realQRoburDf$files<- realQRoburDf$directories %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+realQRoburDf<-realQRoburDf %>% unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  select(-directories)  
+
+
+  ggplot(data=qRoburSims, aes(x=Time, y=EffectivePopulationSize, colour=Type)) + 
+  geom_step(data=realQRoburDf, aes(x=Time, y=EffectivePopulationSize)) + 
+  geom_step() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  theme(legend.position="bottom") + 
+  labs(x="Years Ago", y="Effective Population Size", 
+       title="Q. Robur PSMC' Inference With MS As simulator ",
+       colour="Data Type")  + 
+    facet_wrap(~iterations, nrow=1)
+    theme_bw()
+
+
+
+```
+
+
+##Using Q Lobata MS Simulations with default magic settings
+MS doesn't seem to improve the fit. It's worse. 
+
+```{r}
+folder="../data/PSMCTroubleshooting/TryingMSSimulations/QLobata/"
+files<-list.files(folder, "oak.msmc.out.final.txt", full.names = T)
+iterations<-parse_number(str_extract(files, "Qlob[0-9]*"))
+
+qLobataSims<-tibble(
+  files=files, 
+  iterations=glue("MaxIterations Set to {iterations}"),
+  Type="New inference with MS As simulator"
+)
+
+
+
+
+
+
+
+qLobataSims$files<-qLobataSims$files %>% map(~read_delim(.x, delim="\t", col_names = T))
+
+mu <- 2.5e-09
+gen <- 100
+
+qLobataSims<-qLobataSims %>% 
+  unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  mutate(iterations=factor(iterations, levels=levels))
+
+realQLobata<-"../data/PSMCTroubleshooting/Qlob_PSMC/output_20180613/oak.msmc.out.final.txt"
+realQLobataDf<-tibble(
+  directories=realQLobata,
+  Type="True Simulated Demography (Inferred Empirical Demography)"
+)
+realQLobataDf$files<- realQLobataDf$directories %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+realQLobataDf<-realQLobataDf %>% unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  select(-directories)  
+
+
+  ggplot(data=qLobataSims, aes(x=Time, y=EffectivePopulationSize, colour=Type)) + 
+  geom_step(data=realQLobataDf, aes(x=Time, y=EffectivePopulationSize)) + 
+  geom_step() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  theme(legend.position="bottom") + 
+  labs(x="Years Ago", y="Effective Population Size", 
+       title="Q. Lobata PSMC' Inference With MS As simulator ",
+       colour="Data Type")  + 
+    theme_bw() +
+    facet_wrap(~iterations, nrow=1)
+
+
+
+```
+
+
+
+
+
+```{r}
+
+```
+

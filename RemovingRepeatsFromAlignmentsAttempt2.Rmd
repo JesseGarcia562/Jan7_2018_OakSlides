@@ -1,0 +1,306 @@
+---
+title: "Removing Repeats from SNP Coords"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(tidyverse)
+library(Biostrings)
+library(data.table)
+library(GenomicRanges)
+```
+
+
+# Reading in data table from Email and associated Nucmer alignment files
+```{r}
+coordinatesAndAlignments<-as_tibble(fread("../data/CoordinatesAndAlignmentsForQRoburAndQLobata_Oct172018.csv") %>% select(-QLobata2018SeqAlignments, -QRoburSeqAlignments))
+
+names(coordinatesAndAlignments)
+```
+
+
+
+## Differences in aligned length
+- A lot more have 0 than I thought. 
+```{r}
+
+coordinatesAndAlignments %>% 
+  mutate(DifferenceInLength=QRoburLengthAligned-QLobataLengthAligned) %>% 
+  ggplot(aes(x=DifferenceInLength)) + 
+  geom_histogram() + 
+  labs(x="Differences in Aligned Length") + 
+  theme_bw()
+```
+
+
+## Reading in Q Lobata and Q Robur bed file
+
+```{r}
+bedFileOfRepeatsAndN<-"../data/Qlobata3dot0-chromNamesJustFirstWord.runs-of-SJCdeNovoRptModelRptMask-and-Ns.UCSCbed4.txt"
+bedFileOfRepeatsAndN<-fread(bedFileOfRepeatsAndN)
+bedFileOfRepeatsAndN<-bedFileOfRepeatsAndN %>% dplyr::rename(IncompleteChrName=V1, Start=V2, End=V3, Annotation=V4)
+
+#tables come from Sorel's email 
+chrName<-read_table("chr1 Reversed: Scq3eQI_240;HRSCAF=820
+chr2 Reversed: Scq3eQI_1869;HRSCAF=2693
+chr3 Reversed: Scq3eQI_2027;HRSCAF=3423
+chr4 Scq3eQI_2026;HRSCAF=3421
+chr5 Scq3eQI_2018;HRSCAF=3193
+chr6 Scq3eQI_2028;HRSCAF=3424
+chr7 Reversed: Scq3eQI_27
+chr8 Scq3eQI_103;HRSCAF=384
+chr9 Reversed: Scq3eQI_316;HRSCAF=953
+chr10 Scq3eQI_174;HRSCAF=633
+chr11 Reversed: Scq3eQI_1982;HRSCAF=3004
+chr12 Scq3eQI_304;HRSCAF=933", col_names=F)
+
+chr<-read_table("chr1
+chr2
+chr3
+chr4
+chr5
+chr6
+chr7
+chr8
+chr9
+chr10
+chr11
+chr12",col_names=F)
+
+translationTable<-bind_cols(chrName, chr) %>% 
+  dplyr::rename(QLobata2018Name=X1, IncompleteChrName=X11)
+
+
+qLobataBedFileOfRepeatsAndN<-as_tibble(inner_join(  bedFileOfRepeatsAndN, translationTable, by=c("IncompleteChrName"="IncompleteChrName")))
+
+##Preparing Bed File for Intersenction
+qLobataRepeatsAndNGRange<-GRanges(seqnames=qLobataBedFileOfRepeatsAndN$QLobata2018Name,IRanges(start=qLobataBedFileOfRepeatsAndN$Start, end=qLobataBedFileOfRepeatsAndN$End), Annotation=qLobataBedFileOfRepeatsAndN$Annotation)
+```
+
+
+
+
+## Reading in Q Robur bed file
+- Q Robur has right names!
+
+```{r}
+qRoburRepeats<-"../data/Qrob_PM1N.runs-of-SJCdeNovoRptModelRptMask-and-Ns.UCSCbed4.txt"
+qRoburRepeats<-fread(qRoburRepeats)
+qRoburRepeats <- qRoburRepeats %>% dplyr::rename(QRoburName=V1, Start=V2, End=V3, Annotation=V4)
+qRoburRepeatsAndNGRange<-GRanges(seqnames=qRoburRepeats$QRoburName,IRanges(start=qRoburRepeats$Start, end=qRoburRepeats$End), Annotation=qRoburRepeats$Annotation)
+
+
+
+```
+
+## Turning .1coords alignment file into GRange Need To make one for Q Lobata and Q Robur
+
+
+```{r}
+
+numberOfAlignments<-nrow(coordinatesAndAlignments)
+
+coordinatesAndAlignments<-coordinatesAndAlignments %>% mutate(OriginalRowNumber=1:numberOfAlignments)
+
+coordinatesAndAlignments<- coordinatesAndAlignments %>% 
+  mutate(IsStartGreaterThanEndQLob=QLobata2018Start > QLobata2018End, 
+         IsStartGreaterThanEndQRob=QRoburStart > QRoburEnd)
+
+#Sometimes its forward for QRob while backwards for QLob
+mean(coordinatesAndAlignments$IsStartGreaterThanEndQLob == coordinatesAndAlignments$IsStartGreaterThanEndQRob)
+
+
+
+
+#Annotating Forward QLob Alignments for Repeats. Will need to do backwards and Qrob same. 
+ 
+qLobForward<-coordinatesAndAlignments %>% 
+  filter(IsStartGreaterThanEndQLob == FALSE,QLobata2018Chromosome != "" )
+
+
+coordAlignmentsGRangeQLobForward<-GRanges(seqnames=qLobForward$QLobata2018Names,
+                                   IRanges(start=qLobForward$QLobata2018Start, 
+                                           end=qLobForward$QLobata2018End))
+
+
+
+
+
+test<-coordAlignmentsGRangeQLobForward %outside% qLobataRepeatsAndNGRange
+
+
+
+
+hits<-findOverlaps(coordAlignmentsGRangeQLobForward,qLobataRepeatsAndNGRange )
+
+indexOfRepeatIntersections<-subjectHits(hits)
+indexOfAlignmentIntersections<-queryHits(hits)
+
+
+intersectedAlignments<-qLobForward[indexOfAlignmentIntersections,]
+intersectedRepeats<-qLobataBedFileOfRepeatsAndN[indexOfRepeatIntersections,]
+
+
+overlaps<-pintersect(coordAlignmentsGRangeQLobForward[indexOfAlignmentIntersections],qLobataRepeatsAndNGRange[indexOfRepeatIntersections])
+
+
+
+percentOverlap <- width(overlaps) / width(coordAlignmentsGRangeQLobForward[indexOfAlignmentIntersections])
+hits <- hits[percentOverlap > 0.5]
+
+
+
+#intersectedAlignments$Annotation<-
+
+# ############ Trying to replicate
+# hits<-findOverlaps(ldGRange, bValueGRange)
+# 
+# 
+# indexOfBValueIntersections<-subjectHits(hits)
+# indexOfLDIntersections<-queryHits(hits)
+# 
+# intersectedLD<-uniqueLDBed[indexOfLDIntersections,]
+# 
+# intersectedB<-bValues[indexOfBValueIntersections,]
+# 
+# #Removing rownames for debugging. 
+# rownames(intersectedB)<-c()
+# 
+# intersectedLD$BValues<-intersectedB$BValue
+# 
+# return(intersectedLD)
+# }
+# 
+
+
+
+
+```
+
+
+
+
+```{r}
+olRanges <- function(query, subject, output="gr", ...) {
+        require(GenomicRanges); require(IRanges)
+        
+        ## Input check
+        if(!((class(query)=="GRanges" & class(subject)=="GRanges") | (class(query)=="IRanges" & class(subject)=="IRanges"))) {
+                stop("Query and subject need to be of same class, either GRanges or IRanges!")
+        }
+        
+        ## Find overlapping ranges
+        if(class(query)=="GRanges") {
+        	seqlengths(query) <- rep(NA, length(seqlengths(query)))
+        	seqlengths(subject) <- rep(NA, length(seqlengths(subject)))
+        }
+	olindex <- as.matrix(findOverlaps(query, subject, ...))
+        query <- query[olindex[,1]]
+        subject <- subject[olindex[,2]]
+        olma <- cbind(Qstart=start(query), Qend=end(query), Sstart=start(subject), Send=end(subject))
+	
+        ## Pre-queries for overlaps
+	startup <- olma[,"Sstart"] < olma[,"Qstart"]
+	enddown <- olma[,"Send"] > olma[,"Qend"]
+	startin <- olma[,"Sstart"] >= olma[,"Qstart"] & olma[,"Sstart"] <= olma[,"Qend"]
+	endin <- olma[,"Send"] >= olma[,"Qstart"] & olma[,"Send"] <=  olma[,"Qend"]
+
+	## Overlap types
+	olup <- startup & endin
+	oldown <- startin & enddown
+	inside <- startin & endin 
+	contained <- startup & enddown
+	
+        ## Overlap types in one vector
+	OLtype <- rep("", length(olma[,"Qstart"]))
+	OLtype[olup] <- "olup"
+	OLtype[oldown] <- "oldown"
+	OLtype[inside] <- "inside" 
+	OLtype[contained] <- "contained"
+	
+        ## Overlap positions
+	OLstart <- rep(0, length(olma[,"Qstart"]))
+	OLend <- rep(0, length(olma[,"Qstart"]))
+	OLstart[olup] <- olma[,"Qstart"][olup]
+	OLend[olup] <- olma[,"Send"][olup]
+	OLstart[oldown] <- olma[,"Sstart"][oldown]
+	OLend[oldown] <- olma[,"Qend"][oldown]
+	OLstart[inside] <- olma[,"Sstart"][inside]
+	OLend[inside] <- olma[,"Send"][inside]
+	OLstart[contained] <- olma[,"Qstart"][contained]
+	OLend[contained] <- olma[,"Qend"][contained]
+
+	## Absolute and relative length of overlaps
+	OLlength <- (OLend - OLstart) + 1
+        OLpercQ <- OLlength/width(query)*100
+        OLpercS <- OLlength/width(subject)*100
+	
+	## Output type
+        oldf <- data.frame(Qindex=olindex[,1], Sindex=olindex[,2], olma, OLstart, OLend, OLlength, OLpercQ, OLpercS, OLtype)
+        if(class(query) == "GRanges") {
+		oldf <- cbind(space=as.character(seqnames(query)), oldf)
+	}
+        if(output=="df") {
+                return(oldf)
+        }
+        if(output=="gr") {
+                if(class(query)=="GRanges") {
+                        elementMetadata(query) <- cbind(as.data.frame(elementMetadata(query)), oldf)
+                }
+                if(class(query)=="IRanges") {
+                        query <- GRanges(seqnames = Rle(rep("dummy", length(query))), ranges = IRanges(start=oldf[,"Qstart"], end=oldf[,"Qend"]), strand = Rle(strand(rep("+", length(query)))), oldf)  
+                }
+                return(query)
+        }
+}
+
+
+
+
+setdiff(alignments, repeats)
+
+alignments<-coordAlignmentsGRangeQLobForward
+repeats<-qLobataRepeatsAndNGRange
+
+overlaps<-as_tibble(   olRanges(query=alignments, subject = repeats)   )
+
+overlaps %>% 
+  group_by(Qindex) %>%
+  summarise(
+    lengthOfAlignment=unique(width),
+    lengthOfOverlap=sum(OLlength),
+    totalPercentOverlap=lengthOfOverlap/lengthOfAlignment
+  ) %>% pull(totalPercentOverlap) %>% hist()
+
+```
+```{r}
+gr1 <- GRanges("chr1", IRanges(c(1,3,5), c(8,9,15)))
+gr2 <- GRanges("chr1", IRanges(c(1,3,5,17), c(8,9,17,35)))
+
+setdiff(gr2,gr1)
+```
+
+############### Lets try again
+ 
+
+```{r}
+library(tidyverse)
+library(Biostrings)
+library(data.table)
+library(GenomicRanges)
+```
+
+
+# Reading in data table from Email and associated Nucmer alignment files
+```{r}
+coordinatesAndAlignments<-as_tibble(fread("../data/CoordinatesAndAlignmentsForQRoburAndQLobata_Oct172018.csv") %>% select(-QLobata2018SeqAlignments, -QRoburSeqAlignments))
+
+snps
+
+names(coordinatesAndAlignments)
+```
+
