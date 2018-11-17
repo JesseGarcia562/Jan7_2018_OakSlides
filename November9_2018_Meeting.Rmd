@@ -35,7 +35,6 @@ levels=c("MaxIterations Set to 20", "MaxIterations Set to 50", "MaxIterations Se
 
 
 
-
 qLobataSims<- qLobataSims %>%
   mutate(iterations=factor(iterations, levels=levels))
 
@@ -70,10 +69,10 @@ realQLobataDf<-realQLobataDf %>% unnest(files) %>%
   facet_wrap(~iterations, nrow=1) +
   labs(x="Years Ago", y="Effective Population Size", 
        title=glue("Q. Lobata PSMC' Inference With Different MaxIterations") ,
-       colour="Data Type")  + theme_bw()
+       colour="Data Type")  + theme_bw(base_size = 20)
 
 
-#ggsave("../analysis/MaxIterationsPreliminary_QLobata_Nov5.pdf", width = 30, height=10)
+ggsave("../analysis/MaxIterationsPreliminary_QLobata_Nov5.pdf", width = 30, height=10)
 ```
 
 
@@ -186,8 +185,263 @@ realQLobataDf<-realQLobataDf %>% unnest(files) %>%
   labs(x="Years Ago", y="Effective Population Size", 
        title="Q. Lobata PSMC' Inference With MS As simulator ",
        colour="Data Type")  + 
-    theme_bw() +
+    theme_bw(base_size = 20) +
     facet_wrap(~iterations, nrow=1)
+
+
+
+  ggsave("../analysis/qLobataPSMCMSASsimulatr_Nov8.pdf", width=30, height=10)
+
+```
+
+#Qlob
+--mask=obtain_callalbe_sites/Qlobata.v3.0.allSites.callable.chr${SGE_TASK_ID}.bed 
+--neg
+ative_mask negMask_chr${SGE_TASK_ID}.bed 
+obtain_callalbe_sites/snp.Qlobata.v3.0.filtered.chr${SGE_TASK_ID}.recode.vcf.gz
+
+
+#Qrob
+--mask=callable_sites/final.callable.good.chr${SGE_TASK_ID}.bed 
+--negative_mask negMask_chr${SGE_TASK_ID}.bed 
+biSNP.Qrob_PM1N.filtered.chr${SGE_TASK_ID}.recode.vcf.gz 
+
+
+
+```{r}
+alignmentMetadata<-"../data/November6AlignmentMetadata.rds"
+
+alignmentMetadata<-readRDS("../data/November6AlignmentMetadata.rds")
+
+
+
+
+
+divergence<-alignmentMetadata %>%
+  summarise(
+    totalMatches=sum(matches),
+    totalMismatches=sum(mismatches),
+    totalAlignedLength=sum(filteredAlignmentLength),
+    totalUnfilteredLength=sum(unfilteredAlignmentLength),
+    divergence=sum(mismatches)/(sum(mismatches) + sum(matches))
+          )
+
+
+divergence$divergence
+
+```
+
+
+
+
+
+## Turning MACS output to msmc input. Done on hoffman from r stuido
+
+module load R/3.5.0
+module load python/3.4
+
+so far 
+
+```{r}
+
+library(tidyverse)
+library(glue)
+library(furrr)
+#simulationDirectory<-"/u/flashscratch/j/jessegar/SimulatingQRobur/Qrob.psmc.2.5e-09/"
+plan(multiprocess)
+simulationDirectory<-"/u/flashscratch/j/jessegar/SimulatingQRoburAfter20Iterations/Qrob.psmc.2.5e-09"
+ms2multihetsep<-"/u/home/j/jessegar/project-klohmuel/oakTrees/code/ms2multihetsep.py"
+chrLength<-25796258
+
+
+
+
+turnMSOuputToMSMCInput <- function(simulationDirectory,ms2multihetsep="/u/home/j/jessegar/project-klohmuel/oakTrees/code/ms2multihetsep.py",chrLength  ) {
+  
+  simulationDirectory<-list.dirs(simulationDirectory, recursive = F)
+  replicate<-parse_number(str_extract(simulationDirectory, "replicate_[0-9]+"))
+  simulationDf<-tibble(
+    simulationDirectory=simulationDirectory,
+    replicate=replicate,
+    chrLength=25796258
+    ) %>% arrange(replicate)
+  simulationDf$msOutput<-simulationDf$simulationDirectory %>% map(~ list.files(.x, full.names=T, pattern="msFormat.OutputFile_ms.out.txt") )
+  simulationDf<-simulationDf %>% unnest(msOutput)
+  simulationDf<-simulationDf %>% mutate(block=parse_number(str_extract(msOutput, "block_[0-9]+")))
+  simulationDf<-simulationDf %>% mutate(command=glue("cat {msOutput} | python3 {ms2multihetsep} chr{block} {chrLength} > {simulationDirectory}/chr{block}_postMultiHetSep.txt"))
+  simulationDf$command %>% future_map(~system(.x), .progress = T)
+
+}
+
+
+
+
+
+turnMSOuputToMSMCInput(simulationDirectory="/u/flashscratch/j/jessegar/SimulatingQRobur/Qrob.psmc.2.5e-09", chrLength = 25796258)
+
+
+turnMSOuputToMSMCInput(simulationDirectory="/u/flashscratch/j/jessegar/SimulatingQRoburAfter20Iterations/Qrob.psmc.2.5e-09", chrLength = 25796258)
+
+
+
+
+
+
+
+```
+
+## Using macs generated msmc input for msmc inference
+
+module load R/3.5.0
+module load python/3.4
+
+so far 
+
+
+script is at 
+
+runMSMCOnMacsSimulationsQRobur.R
+
+```{r}
+
+library(tidyverse)
+library(glue)
+
+
+
+
+msmc<-"/u/home/j/jessegar/project-klohmuel/msmc-master/msmc"
+simulationDirectory<-"/u/flashscratch/j/jessegar/SimulatingQRoburAfter20Iterations/Qrob.psmc.2.5e-09"
+simulationDirectory<-list.dirs(simulationDirectory, recursive = F)
+replicate<-parse_number(str_extract(simulationDirectory, "replicate_[0-9]+"))
+msmcIterations=200
+simulationDf<-tibble(
+    simulationDirectory=simulationDirectory,
+    replicate=replicate,
+    msmcIterations=msmcIterations
+    ) %>% arrange(replicate)
+
+
+simulationDf <- simulationDf %>% mutate(msmcInput=glue("{simulationDirectory}/chr*_postMultiHetSep.txt"))
+
+
+simulationDf<-simulationDf %>% mutate(command=glue("{msmc} -t 12 -i {msmcIterations} -o {simulationDirectory}/oak.msmc.out {msmcInput}"))
+
+
+qRob20IterationsSims<-simulationDf
+
+
+
+simulationDirectory<-"/u/flashscratch/j/jessegar/SimulatingQRobur/Qrob.psmc.2.5e-09"
+simulationDirectory<-list.dirs(simulationDirectory, recursive = F)
+replicate<-parse_number(str_extract(simulationDirectory, "replicate_[0-9]+"))
+msmcIterations=200
+simulationDf<-tibble(
+    simulationDirectory=simulationDirectory,
+    replicate=replicate,
+    msmcIterations=msmcIterations
+    ) %>% arrange(replicate)
+
+
+simulationDf <- simulationDf %>% mutate(msmcInput=glue("{simulationDirectory}/chr*_postMultiHetSep.txt"))
+
+
+simulationDf<-simulationDf %>% mutate(command=glue("{msmc} -t 12 -i {msmcIterations} -o {simulationDirectory}/oak.msmc.out {msmcInput}"))
+
+qRob100IterationsSims<-simulationDf
+
+
+df<-bind_rows(qRob20IterationsSims,qRob100IterationsSims)
+
+
+system(df$command[SGETaskID])
+
+
+
+```
+
+
+
+## Rerunning Resequenced MSMC Analysis on hoffman with jobwrapper with new max iterations
+
+module load R/3.5.0
+module load python/3.4
+
+this is called runMSMCOnResequencedQLob.R
+
+```{r}
+library(tidyverse)
+library(glue)
+
+
+
+
+msmc<-"/u/home/j/jessegar/project-klohmuel/msmc-master/msmc"
+outdir<-"/u/flashscratch/j/jessegar/forJesse/resequenced"
+msmcIterations=200
+resequencedMSMCDirectories<-"/u/flashscratch/z/zhen/forJesse/resequenced/msmcAnalysis"
+resequencedMSMCDirectories<-list.dirs(resequencedMSMCDirectories, full.names = T) %>% str_subset(pattern="inputFiles")
+msmcInput<-resequencedMSMCDirectories %>% map_chr(~list.files(path=.x, full.names = T, pattern="chr1_postMultiHetSep.txt") %>% str_replace(pattern="chr1", replacement = "chr*"))
+df<-tibble(
+  resequencedMSMCDirectories=resequencedMSMCDirectories,
+  msmcInput=msmcInput, 
+  msmcIterations=msmcIterations, 
+  output=outdir
+)
+
+df$name<-resequencedMSMCDirectories %>% str_extract(pattern="QL.*00F")
+
+df<-df %>% mutate(command=glue("{msmc} -t 12 -i {msmcIterations} -o {outdir}/{name} {msmcInput}"))
+
+df$command[1]
+
+system(df$command[1])
+
+```
+
+
+
+
+#### Just quickly checking what qrobur simulations after 20 iterations looks like
+
+
+```{r}
+
+
+mu <- 2.5e-09
+gen <- 75
+
+
+file<-"../data/PSMCTroubleshooting/maCSSimulations/oak.msmc.out.final.txt"
+test=read_delim(file, delim="\t", col_names = T)  %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) , Type="Simulation after 200 Iterations") 
+
+ 
+
+
+
+realQRobur<-"../data/PSMCTroubleshooting/Qrob_PSMC/output_20180802/oak.msmc.out.final.txt"
+realQRoburDf<-tibble(
+  directories=realQRobur,
+  Type="True Simulated Demography (Inferred Empirical Demography)"
+)
+realQRoburDf$files<- realQRoburDf$directories %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+realQRoburDf<-realQRoburDf %>% unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  select(-directories)  
+
+
+  ggplot(data=test, aes(x=Time, y=EffectivePopulationSize, colour=Type)) + 
+  geom_step(data=realQRoburDf, aes(x=Time, y=EffectivePopulationSize)) + 
+  geom_step() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  theme(legend.position="bottom") + 
+  labs(x="Years Ago", y="Effective Population Size", 
+       title="Q. Robur PSMC' Inference With MS As simulator ",
+       colour="Data Type")  +
+    theme_bw()
 
 
 
@@ -197,7 +451,237 @@ realQLobataDf<-realQLobataDf %>% unnest(files) %>%
 
 
 
+
+
+
+
+
+
+
+##Plotting Resequenced with Max iTerations set to 200
+
+
+
 ```{r}
 
+
+
+
+mu <- 2.5e-09
+gen <- 50
+
+
+realQRobur<-"../data/PSMCTroubleshooting/Qrob_PSMC/output_20180802/oak.msmc.out.final.txt"
+realQRoburDf<-tibble(
+  directories=realQRobur,
+  Type="Q. robur reference genome", 
+  species="Q. robur", 
+  id="Q. robur"
+)
+realQRoburDf$files<- realQRoburDf$directories %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+realQRoburDf<-realQRoburDf %>% unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  select(-directories)  
+
+
+
+
+bootstraps<-readRDS("../data/bootstraps200IterationsEmpirical_Nov8.rds")
+
+bootstraps<-bootstraps %>%
+  mutate(id=str_extract(files, pattern = "bootstraps_[0-9]+")) %>%
+  mutate(species=str_extract(files, pattern="q[lr]ob")) %>%
+  mutate(Type=case_when(
+    species=="qlob" ~ "Q. lobata bootstrapped empirical (MaxIterations 100)",
+    species=="qrob" ~ "Q. robur bootstrapped empirical (MaxIterations 100)"
+  )) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) )
+  
+
+
+resequencedMSMC<-"../data/resequenced/"
+msmcFiles<-list.files(resequencedMSMC, full.names = T, pattern="final.txt")
+id<-str_extract(msmcFiles, pattern="QL.*00F")
+
+msmcFilesDf<-tibble(
+  msmcFiles=msmcFiles,
+  id=id
+  
+)
+
+msmcFilesDf$files<-msmcFilesDf$msmcFiles %>% map(~read_delim(.x, delim="\t", col_names = T))
+
+msmcFilesDf <-msmcFilesDf %>% unnest(files)
+
+
+
+msmcFilesDf<-msmcFilesDf  %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  mutate(Type="Q. lobata resequenced genomes (MaxIterations 200)", species="Q. lobata")
+
+
+
+##Find 
+realQLobata<-"../data/PSMCTroubleshooting/Qlob_PSMC/output_20180613/oak.msmc.out.final.txt"
+realQLobataDf<-tibble(
+  directories=realQLobata,
+  Type="Q. lobata reference genome (MaxIterations 20)",
+  id="Q. lobata reference genome", 
+  species="Q. lobata"
+)
+realQLobataDf$files<- realQLobataDf$directories %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+realQLobataDf<-realQLobataDf %>% unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  select(-directories) 
+
+data=bind_rows(msmcFilesDf,realQLobataDf,bootstraps, realQRoburDf)
+
+data %>% 
+  filter(species=="qlob" | species == "Q. lobata") %>%
+ggplot(aes(x=Time, y=EffectivePopulationSize,group=interaction(species,id), colour=Type)) + 
+  geom_step() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  theme(legend.position="bottom") + 
+  labs(x="Years Ago", y="Effective Population Size", 
+       title="Q. lobata PSMC",
+       colour="Data Type")  +
+    theme_bw()
+
+
+
+
+
+  ggsave("../analysis/qLobataPSMC_Nov8.pdf", width=30, height=20)
+
+
+
+```
+
+
+##Q Robur getting other simulations
+
+run on terminal via r studio
+```{r}
+directoryOfSims<-"/u/flashscratch/j/jessegar/SimulatingQRobur/Qrob.psmc.2.5e-09"
+directories<-list.dirs(directoryOfSims, recursive = F)
+df <- tibble(
+  directories=directories
+)
+
+df<-df %>% mutate(replicate=parse_number(str_extract(directories,pattern="replicate_[0-9]+")))
+
+df$files<-df$directories %>% map(~list.files(.x, pattern="oak.msmc.out.final.txt", full.names = T))
+df<-df %>% unnest(files)
+
+
+df$files<-df$files %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+
+df<-df %>% unnest(files) %>% mutate(Type="Q. robur simulated from empirical after 100 iterations (MaxIteration 200)")
+
+df1<-df
+
+
+
+directoryOfSims<-"/u/flashscratch/j/jessegar/SimulatingQRoburAfter20Iterations/Qrob.psmc.2.5e-09"
+directories<-list.dirs(directoryOfSims, recursive = F)
+df <- tibble(
+  directories=directories
+)
+
+df<-df %>% mutate(replicate=parse_number(str_extract(directories,pattern="replicate_[0-9]+")))
+
+df$files<-df$directories %>% map(~list.files(.x, pattern="oak.msmc.out.final.txt", full.names = T))
+df<-df %>% unnest(files)
+
+
+df$files<-df$files %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+
+df<-df %>% unnest(files) %>% mutate(Type="Q. robur simulated from empirical after 20 iterations (MaxIteration 200)")
+
+df2<-df
+
+saveRDS(bind_rows(df1, df2), "simulationsOfQRoburMACSNovember8.rds")
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+##Q Robur 
+```{r}
+
+mu <- 2.5e-09
+gen <- 30
+
+
+file<-"../data/simulationsOfQRoburMACSNovember8.rds"
+simulations<-readRDS(file)
+simulations= simulations %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) , id="Simulation") 
+
+ 
+
+
+
+realQRobur<-"../data/PSMCTroubleshooting/Qrob_PSMC/output_20180802/oak.msmc.out.final.txt"
+realQRoburDf<-tibble(
+  directories=realQRobur,
+  Type=" Q. robur reference genome (MaxIterations 20)",
+  id="Empirical20Iter"
+)
+
+
+bootstraps<-readRDS("../data/bootstraps200IterationsEmpirical_Nov8.rds")
+
+bootstraps<-bootstraps %>%
+  mutate(id=str_extract(files, pattern = "bootstraps_[0-9]+")) %>%
+  mutate(species=str_extract(files, pattern="q[lr]ob")) %>%
+  mutate(Type=case_when(
+    species=="qlob" ~ "Q. lobata bootstrapped empirical (MaxIterations 100)",
+    species=="qrob" ~ "Q. robur bootstrapped empirical (MaxIterations 100)"
+  )) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) )
+  
+
+bootstraps<-bootstraps %>% filter(species=="qrob")
+
+
+
+
+realQRoburDf$files<- realQRoburDf$directories %>% map(~ read_delim(.x,delim="\t", col_names = T)) 
+realQRoburDf<-realQRoburDf %>% unnest(files) %>% 
+  mutate(Time=left_time_boundary/mu*gen, EffectivePopulationSize= (1/lambda_00)/(2*mu) , id="Empirical") %>% 
+  select(-directories)  
+
+
+  ggplot(data=realQRoburDf, aes(x=Time, y=EffectivePopulationSize,  colour=Type)) + 
+  geom_step(data=bootstraps, aes(x=Time, y=EffectivePopulationSize, group=files)) +
+  geom_step(data=simulations, aes(x=Time, y=EffectivePopulationSize, group=interaction(replicate,directories))) +
+  geom_step() +
+  theme_bw() + 
+  scale_x_continuous(trans='log10',labels = scales::comma) + 
+  scale_y_continuous(trans='log10') + 
+  theme(legend.position="bottom") + 
+  labs(x="Years Ago", y="Effective Population Size", 
+       title="Q. robur PSMC",
+       colour="Data Type")  +
+    theme_bw(base_size = 20)
+
+  
+  
+  theme_set(theme_bw(base_size = 20))
+  
+  
+  ggsave("../analysis/qRoburPSMC_Nov8.pdf", width=30, height=10)
 ```
 

@@ -3,6 +3,8 @@ title: "R Notebook"
 output: html_notebook
 ---
 
+"computingDivergenceHoffmanScript.R" is this R Markdown turned into an optimized script for hoffman. 
+
 #Using mummers delta file for alignments. 
 
 ```{r}
@@ -53,6 +55,10 @@ files<-list.files("../data/", "alignmentFile", full.names = T)
 
 
 df<-as_tibble(read_lines(files[1]))
+
+f <- as_tibble(fread(files[1], sep= "\n", header = FALSE)[[1L]])
+
+
 
 df$alignment<-df$value %>%   map_lgl(~ str_detect(.x, "^[0-9]+\\s+[atcgnATCGN\\.]") ) 
 df<-df %>% unnest(alignment) 
@@ -120,7 +126,7 @@ qLobataAlignments$notInARepeatOrN<-notInARepeatOrN
 
 ```
 
-## Now just subset alignments that aren't a repeat or in a run of N and compute hamming distance?
+## Now just subset alignments that aren't a repeat or in a run of N and compute hamming distance
 
 ```{r}
 
@@ -135,6 +141,8 @@ qLobataAlignmentsFiltered<-qLobataAlignments %>% filter(notInARepeatOrN == TRUE)
 qLobataSequence<-qLobataAlignmentsFiltered$sequence[1]
 qRoburSequence<-qRoburAlignmentsFiltered$sequence[1]
 
+
+computeDivergence <- function(qLobataSequence,qRoburSequence){
 
 qLobataSequence<-unlist(str_split(string=qLobataSequence,pattern = ""))
 
@@ -177,6 +185,15 @@ divergenceMetadata<-
     unfilteredAlignmentLength=nrow(pairwiseAlignmentDf),
     filteredAlignmentLength=filteredAlignedSequence
   )
+
+return(divergenceMetadata)
+}
+
+possibly_computeDivergence<-possibly(computeDivergence, otherwise = as_tibble(NA))
+
+
+test=map2_df(.x=qLobataAlignmentsFiltered$sequence, .y=qRoburAlignmentsFiltered$sequence, ~ possibly_computeDivergence(qLobataSequence = .x, qRoburSequence = .y) )
+
 
 ```
 
