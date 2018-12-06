@@ -1,0 +1,243 @@
+---
+title: "December 5, 2018 Lab Meeting"
+author: "Jesse Garcia"
+date: "12/5/2018"
+output: beamer_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r echo = FALSE, include=F}
+knitr::opts_chunk$set(echo=FALSE)
+knitr::opts_chunk$set(message=FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+library(tidyverse)
+library(glue)
+library(gghighlight)
+
+mu <- 1.01e-8
+qlobGen <- 50
+qrobGen <- 30
+
+
+resequenced<-readRDS("../data/SouthernQlobataResequenced_Nov26_2018.rds") %>% mutate(Type="Q. lobata Samples from Nov. 13 I Did")
+
+
+resequencedMSMC<-"../data/resequenced/"
+msmcFiles<-list.files(resequencedMSMC, full.names = T, pattern="final.txt")
+id<-str_extract(msmcFiles, pattern="QL.*00F")
+
+msmcFilesDf<-tibble(
+  msmcFiles=msmcFiles,
+  individuals=id
+  
+)
+
+msmcFilesDf$files<-msmcFilesDf$msmcFiles %>% map(~read_delim(.x, delim="\t", col_names = T))
+
+msmcFilesDf <-msmcFilesDf %>% unnest(files)
+
+
+
+msmcFilesDf<-msmcFilesDf  %>% 
+  mutate(Time=left_time_boundary/mu*qlobGen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  mutate(Type="Q. lobata resequenced genomes Ying Did", species="Q. lobata")
+
+
+allResequenced<-bind_rows(msmcFilesDf, resequenced)
+
+justQlobata<-allResequenced %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize, colour=individuals, linetype=Type)) +
+  geom_step(size=1) +                                                                                                                                                                                  
+  theme_bw() +                                                                                                                                              
+  scale_x_continuous(trans='log10',labels = scales::comma) +                                                                                                                                   
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size")
+
+
+
+
+ #ggsave(filename="../analysis/Qlobata_PSMC_JesseResequence_YingResequenced_Nov28_2018.pdf", plot=justQlobata, height = 10, width=20)
+
+
+
+bootstraps<-readRDS("../data/bootstraps200IterationsEmpirical_Nov8.rds")
+
+
+bootstraps<-bootstraps %>%
+  mutate(id=str_extract(files, pattern = "bootstraps_[0-9]+")) %>%
+  mutate(species=str_extract(files, pattern="q[lr]ob")) %>%
+  mutate(Type=case_when(
+    species=="qlob" ~ "Q. lobata reference genome bootstrapped (MaxIterations 100; 100 Bootstraps)",
+    species=="qrob" ~ "Q. robur reference genome (MaxIterations 100; 100 Bootstraps)",
+    
+  )) 
+
+qlobBootstraps<-bootstraps %>% 
+  filter(species=="qlob")  %>% 
+  mutate(Time=left_time_boundary/mu*qlobGen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  mutate(individuals="Q. lobata reference genome bootstrapped")
+
+qrobBootstraps<-bootstraps %>% 
+  filter(species=="qrob")  %>% 
+  mutate(Time=left_time_boundary/mu*qrobGen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  mutate(individuals="Q. robur reference genome bootstrapped")
+
+allPSMC<-allResequenced %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize,colour=Type, group=interaction(individuals, Type))) +
+  geom_step() +
+  geom_step(data=qlobBootstraps, aes(x=Time, y=EffectivePopulationSize, group=id)) +
+  geom_step(data=qrobBootstraps, aes(x=Time, y=EffectivePopulationSize, group=id)) +
+  theme(text = element_text(size=18)) +
+  theme_bw() +                                                                                                                                              
+  scale_x_continuous(trans='log10',labels = scales::comma) +                                                                                                                                   
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size")
+ 
+ 
+#ggsave(filename="../analysis/QlobataAndQRobur_PSMC_JesseResequence_YingResequenced_Nov28_2018.pdf", plot=allPSMC, height = 10, width=20)
+```
+
+
+
+## Old plot
+
+```{r}
+allPSMC
+```
+
+
+
+
+```{r creatingPSMCPlot, include=FALSE}
+mu <- 1.01e-8
+qlobGen <- 50
+qrobGen <- 30
+
+
+colorsForPlot= c("Q. lobata reference genome (100 Bootstraps)" = "darkolivegreen4", 
+                                 "Resequenced Q. lobata samples" = "mediumseagreen",
+                 "Q. robur reference genome (100 Bootstraps)" = "salmon4")
+
+
+resequenced<-readRDS("../data/SouthernQlobataResequenced_Nov26_2018.rds") %>% mutate(Type="Resequenced Q. lobata samples")
+
+
+resequencedMSMC<-"../data/resequenced/"
+msmcFiles<-list.files(resequencedMSMC, full.names = T, pattern="final.txt")
+id<-str_extract(msmcFiles, pattern="QL.*00F")
+
+msmcFilesDf<-tibble(
+  msmcFiles=msmcFiles,
+  individuals=id
+  
+)
+
+msmcFilesDf$files<-msmcFilesDf$msmcFiles %>% map(~read_delim(.x, delim="\t", col_names = T))
+
+msmcFilesDf <-msmcFilesDf %>% unnest(files)
+
+
+
+msmcFilesDf<-msmcFilesDf  %>% 
+  mutate(Time=left_time_boundary/mu*qlobGen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  mutate(Type="Q. lobata resequenced genomes Ying Did", species="Q. lobata")
+
+
+allResequenced<-bind_rows(msmcFilesDf, resequenced) %>% filter(Type !="Q. lobata resequenced genomes Ying Did", individuals != "QL.BER.1", individuals != "QL.HV.1")
+
+
+
+justQlobata<-allResequenced %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize, colour=individuals, linetype=Type)) +
+  geom_step(size=1) +                                                                                                                                                                                  
+  theme_bw() +                                                                                                                                              
+  scale_x_continuous(trans='log10',labels = scales::comma) +                                                                                                                                   
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size")
+
+
+
+
+ #ggsave(filename="../analysis/Qlobata_PSMC_JesseResequence_YingResequenced_Nov28_2018.pdf", plot=justQlobata, height = 10, width=20)
+
+
+
+bootstraps<-readRDS("../data/bootstraps200IterationsEmpirical_Nov8.rds")
+
+
+bootstraps<-bootstraps %>%
+  mutate(id=str_extract(files, pattern = "bootstraps_[0-9]+")) %>%
+  mutate(species=str_extract(files, pattern="q[lr]ob")) %>%
+  mutate(Type=case_when(
+    species=="qlob" ~ "Q. lobata reference genome (100 Bootstraps)",
+    species=="qrob" ~ "Q. robur reference genome (100 Bootstraps)",
+    
+  )) 
+
+qlobBootstraps<-bootstraps %>% 
+  filter(species=="qlob")  %>% 
+  mutate(Time=left_time_boundary/mu*qlobGen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  mutate(individuals="Q. lobata reference genome")
+
+qrobBootstraps<-bootstraps %>% 
+  filter(species=="qrob")  %>% 
+  mutate(Time=left_time_boundary/mu*qrobGen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  mutate(individuals="Q. robur reference genome")
+
+allPSMC<-allResequenced %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize,colour=Type, group=interaction(individuals, Type))) +
+  geom_step(alpha=.4) +
+
+  geom_step(data=qlobBootstraps, aes(x=Time, y=EffectivePopulationSize, group=id), alpha=.6) +
+    geom_step(data=qrobBootstraps, aes(x=Time, y=EffectivePopulationSize, group=id), alpha=.6) +
+  theme(text = element_text(size=11)) +
+  theme_bw() +                                                                                                                                              
+  scale_x_continuous(trans='log10',labels = scales::comma) +                                                                                                                                   
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size") +
+  scale_color_manual(values=colorsForPlot, breaks=c("Q. lobata reference genome (100 Bootstraps)", "Resequenced Q. lobata samples", "Q. robur reference genome (100 Bootstraps)"))
+ 
+ 
+
+
+```
+
+
+## New plot
+
+
+```{r}
+
+
+yaxis=expression(atop("Effective population size in panmictic population", "(Inverse Coalescence Rate, scaled by " ~2*mu ~")"))
+
+
+ allPSMC +
+  theme(text = element_text(size=18), 
+           legend.justification=c(0,1), 
+           legend.position=c(0.05, 0.95),
+           legend.background = element_blank(),
+           legend.key = element_blank(),
+        axis.title.y = element_text(size=15),
+       axis.text.x = element_text (size = 7)
+) + 
+  guides(colour = guide_legend(ncol = 1, override.aes = list(size=1))) + 
+  labs(y=yaxis, colour="") 
+
+
+```
+
+
+
+## Working on
+
+1. Reference genome bootstraps only had 100 iterations, ying's, and new samples had 200 iterations. (running now)
+2. Simulated Q. lobata and Q. robur with new mutation rate. Converted macs ouput to ms, then ms to PSMC' input.
+  * PSMC' inference on simulations is in queue. 
+3. Sorel is calling variants for all samples together. Waiting for this VCF to run PCA and compute pi.
+  * Pi for all samples individually or together? Robur Reference genome? Remove CDS?
+

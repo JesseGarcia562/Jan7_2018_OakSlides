@@ -1,0 +1,77 @@
+#!/bin/bash
+#$ -cwd
+#$ -l h_rt=24:00:00,h_data=32G
+#$ -N Qlob_macs
+#$ -m abe
+#$ -t 1-20
+
+
+source /u/local/Modules/default/init/modules.sh
+module load gcc/6.3.0
+module load python/3.4
+rundate=`date +%Y%m%d`
+model=Qlob.psmc.1.01e-08
+j=$SGE_TASK_ID
+mkdir -p /u/flashscratch/j/jessegar/SimulatingQLobata/Qlobata.psmc.1.01e-08/replicate_$j.${model}
+cd /u/flashscratch/j/jessegar/SimulatingQLobata/Qlobata.psmc.1.01e-08/replicate_$j.${model}
+for i in {1..12}
+do
+# Qlob psmc' model
+mu=1.01e-08
+r=2.54e-08
+
+Na=7130267.8401
+rho=0.724435212554
+theta=0.28806282074
+date=`date +%Y%m%d`
+SEED=$((date+$RANDOM+((j-1)*12)+i))
+/u/flashscratch/j/jessegar/macs/macs 2 29160242 -t 0.28806282074 -r 0.724435212554 -s $SEED \
+-eN 0.0 0.00192721049914 \
+-eN 0.000225608427471 0.00753134657669 \
+-eN 0.000457077382155 0.00684950278205 \
+-eN 0.000694719990195 0.00910570886357 \
+-eN 0.000938875066575 0.00934992896245 \
+-eN 0.00118990711512 0.0086224548723 \
+-eN 0.00144821535431 0.00793815199148 \
+-eN 0.00171423718872 0.00771936710113 \
+-eN 0.00198844473761 0.0081301040542 \
+-eN 0.00227135872071 0.00927159242507 \
+-eN 0.00256355192976 0.0125847936892 \
+-eN 0.00286565269992 0.0125847936892 \
+-eN 0.00317835185273 0.0195526473645 \
+-eN 0.0035024304678 0.0195526473645 \
+-eN 0.003838745997 0.0277769420651 \
+-eN 0.00418821837855 0.0277769420651 \
+-eN 0.0045519931959 0.0341360440533 \
+-eN 0.00493125074715 0.0341360440533 \
+-eN 0.00532734490365 0.0367251693987 \
+-eN 0.00574190725395 0.0367251693987 \
+-eN 0.00617667353055 0.0357131908152 \
+-eN 0.0066337613271 0.0357131908152 \
+-eN 0.00711556595445 0.0324692397267 \
+-eN 0.00762489929925 0.0324692397267 \
+-eN 0.00816512868255 0.0286523795375 \
+-eN 0.00874021157445 0.0286523795375 \
+-eN 0.0093550427406 0.0258085176773 \
+-eN 0.0100154195276 0.0258085176773 \
+-eN 0.0107286667265 0.0256579180771 \
+-eN 0.0115040531489 0.0256579180771 \
+-eN 0.0123533470611 0.031900836699 \
+-eN 0.013292239485 0.031900836699 \
+-eN 0.0143418022131 0.0584983064557 \
+-eN 0.0155317162712 0.0584983064557 \
+-eN 0.016905340257 0.178114730337 \
+-eN 0.0185300205917 0.178114730337 \
+-eN 0.0205184757437 0.83118999162 \
+-eN 0.0230820137876 0.83118999162 \
+-eN 0.0266951492742 1.0 \
+-eN 0.0328718228048 1.0 > group_${j}_block_${i}.${model}.macsFormat.OutputFile.${rundate}.txt
+
+/u/flashscratch/j/jessegar/macs/msformatter < group_${j}_block_${i}.${model}.macsFormat.OutputFile.${rundate}.txt > group_${j}_block_${i}.${model}.msFormat.OutputFile.${rundate}.txt
+
+
+cat group_${j}_block_${i}.${model}.msFormat.OutputFile.${rundate}.txt | python3 /u/home/j/jessegar/project-klohmuel/oakTrees/code/ms2multihetsep.py chr${i} 29160242 > chr${i}_postMultiHetSep.txt
+done
+cd ../../
+done
+

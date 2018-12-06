@@ -1,0 +1,292 @@
+---
+title: "November 26, 2018 Lab Meeting"
+author: "Jesse Garcia"
+date: "11/26/2018"
+output: 
+  pdf_document: beamer_presentation
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+knitr::opts_chunk$set(message=FALSE)
+knitr::opts_chunk$set(warning=FALSE)
+library(tidyverse)
+library(glue)
+library(gghighlight)
+
+theme_set(theme_bw(base_size = 20)) 
+
+theme_set(theme_bw())
+theme_update(# axis labels
+             axis.title = element_text(size = 30),
+             # tick labels
+             axis.text = element_text(size = 20),
+             # title 
+             title = element_text(size = 50))
+```
+
+<!-- ## Creating A PSMC Plot with yings 8 resequenced my 22 --> 
+
+```{r cars, include=F,results="hold"}
+mu <- 1.01e-8
+qlobGen <- 50
+qrobGen <- 30
+
+
+resequenced<-readRDS("../data/SouthernQlobataResequenced_Nov26_2018.rds") %>% mutate(Type="Q. lobata Samples from Nov. 13 I Did")
+
+
+resequencedMSMC<-"../data/resequenced/"
+msmcFiles<-list.files(resequencedMSMC, full.names = T, pattern="final.txt")
+id<-str_extract(msmcFiles, pattern="QL.*00F")
+
+msmcFilesDf<-tibble(
+  msmcFiles=msmcFiles,
+  individuals=id
+  
+)
+
+msmcFilesDf$files<-msmcFilesDf$msmcFiles %>% map(~read_delim(.x, delim="\t", col_names = T))
+
+msmcFilesDf <-msmcFilesDf %>% unnest(files)
+
+
+
+msmcFilesDf<-msmcFilesDf  %>% 
+  mutate(Time=left_time_boundary/mu*qlobGen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>% 
+  mutate(Type="Q. lobata resequenced genomes Ying Did", species="Q. lobata")
+
+
+allResequenced<-bind_rows(msmcFilesDf, resequenced)
+
+justQlobata<-allResequenced %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize, colour=individuals, linetype=Type)) +
+  geom_step(size=1) +                                                                                                                                                                                  
+  theme_bw() +                                                                                                                                              
+  scale_x_continuous(trans='log10',labels = scales::comma) +                                                                                                                                   
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size")
+
+
+
+
+ #ggsave(filename="../analysis/Qlobata_PSMC_JesseResequence_YingResequenced_Nov28_2018.pdf", plot=justQlobata, height = 10, width=20)
+
+
+
+bootstraps<-readRDS("../data/bootstraps200IterationsEmpirical_Nov8.rds")
+
+
+bootstraps<-bootstraps %>%
+  mutate(id=str_extract(files, pattern = "bootstraps_[0-9]+")) %>%
+  mutate(species=str_extract(files, pattern="q[lr]ob")) %>%
+  mutate(Type=case_when(
+    species=="qlob" ~ "Q. lobata reference genome bootstrapped (MaxIterations 100; 100 Bootstraps)",
+    species=="qrob" ~ "Q. robur reference genome (MaxIterations 100; 100 Bootstraps)",
+    
+  )) 
+
+qlobBootstraps<-bootstraps %>% 
+  filter(species=="qlob")  %>% 
+  mutate(Time=left_time_boundary/mu*qlobGen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  mutate(individuals="Q. lobata reference genome bootstrapped")
+
+qrobBootstraps<-bootstraps %>% 
+  filter(species=="qrob")  %>% 
+  mutate(Time=left_time_boundary/mu*qrobGen, EffectivePopulationSize= (1/lambda_00)/(2*mu) ) %>%
+  mutate(individuals="Q. robur reference genome bootstrapped")
+
+allPSMC<-allResequenced %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize,colour=Type, group=interaction(individuals, Type))) +
+  geom_step() +
+  geom_step(data=qlobBootstraps, aes(x=Time, y=EffectivePopulationSize, group=id)) +
+  geom_step(data=qrobBootstraps, aes(x=Time, y=EffectivePopulationSize, group=id)) +
+  theme(text = element_text(size=16)) +
+  theme_bw() +                                                                                                                                              
+  scale_x_continuous(trans='log10',labels = scales::comma) +                                                                                                                                   
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size")
+ 
+ 
+ 
+#ggsave(filename="../analysis/QlobataAndQRobur_PSMC_JesseResequence_YingResequenced_Nov28_2018.pdf", plot=allPSMC, height = 10, width=20)
+```
+
+
+
+## MSMC Plot with Ying's 8 resequenced oak genomes and 22 oak genomes I processed
+```{r}
+ allPSMC +
+    theme(text = element_text(size=18), legend.position="bottom")+ guides(colour = guide_legend(ncol = 1))
+```
+
+
+
+## Visually it looks like there are 2 outliers among the genomes I processed
+```{r}
+justQlobata<-allResequenced %>% 
+  filter(!is.na(files)) %>%
+  ggplot(aes(x=Time, y=EffectivePopulationSize, colour=individuals)) +
+  geom_step(size=1) +                                                                                                                                                                                  
+  theme_bw() +                                                                                                                                              
+  scale_x_continuous(trans='log10',labels = scales::comma) +                                                                                                                                   
+  scale_y_continuous(trans='log10') + 
+  labs(x="Years Ago", y="Effective Population Size") + 
+  gghighlight(individuals %in% c("QL.BER.1", "QL.HV.1"))
+  
+
+justQlobata  +
+    theme(text = element_text(size=18))
+```
+
+
+## How does coverage affect MSMC output?
+
+
+
+## Coverage and MSMCs "mutationRate"
+
+Reading source code I gather: mutationRate is Segregating Sites/Callable Sites/"watterson"/2 
+
+watterson=auto watterson = iota(1, nrHaplotypes).map!"1.0 / a"().reduce!"a+b"();
+
+Going to use Heterozygosity ~ "mutationRate"
+
+
+## No strong correlation between "mutationRate" and mean coverage
+
+```{r pressure, echo=FALSE}
+files<-"../data/MSMCMutationRate_Coverage_Df_November28.rds"
+mutationRateMSMC<-readRDS(files)
+
+mutationRateMSMC %>% 
+  ggplot(aes(x=mean, y=mutationRate, colour=individuals)) +
+  geom_point() + 
+  geom_smooth() +
+  labs(x="Mean Coverage (MQ > 20)", y="Heterozygosity (Segregating Sites/Callable Sites/Waterson/2)") +
+  theme_bw()  +
+    theme(text = element_text(size=14))
+
+
+
+
+```
+
+## Two outliers in "mutationRate" are also outliers in MSMC at time 0
+
+```{r}
+mutationRateMSMC %>% 
+  ggplot(aes(x=mean, y=mutationRate, colour=individuals)) +
+  geom_point() + 
+  geom_smooth() +
+  labs(x="Mean Coverage (MQ > 20)", y="Heterozygosity (Segregating Sites/Callable Sites/Waterson/2)") +
+  theme_bw() + 
+  gghighlight(individuals %in% c("/QL.BER.1.00F", "/QL.HV.1.00F")) +
+    theme(text = element_text(size=18))
+
+```
+
+
+
+
+## No correlation of effective population size at time 0 and mean coverage
+
+```{r}
+#allResequenced %>% filter(Time==0) %>% arrange(desc(EffectivePopulationSize))
+
+test=allResequenced %>% dplyr::mutate(msmcFiles=str_replace(msmcFiles, pattern="../data/resequenced/", replacement = "")) %>%
+  mutate(individuals=str_replace(msmcFiles, pattern=".final.txt", "")) %>% filter(Time==0)
+
+test=test %>%
+  mutate(files=str_replace(files, "/u/flashscratch/j/jessegar/FilteringResequenceHighP", replacement = "")) %>%
+  mutate(files=str_replace(files, pattern = ".final.txt", replacement=""))
+
+test<-test %>% mutate(individuals=coalesce(individuals, files))
+
+test<-left_join(test,mutationRateMSMC)
+
+
+
+test %>% 
+  ggplot(aes(x=mean,y=EffectivePopulationSize, colour=individuals)) +
+  geom_point() + 
+  theme_bw() + 
+  labs(x="Mean Coverage (MQ > 20)", y="Effective Population Size At Time 0") +
+  theme_bw() + 
+  gghighlight(individuals %in% c("/QL.BER.1.00F", "/QL.HV.1.00F")) +
+    theme(text = element_text(size=18))
+```
+
+
+## "mutationRate" vs Effective Population Size at time 0 does appear to be weakly correlated
+
+```{r}
+test=allResequenced %>% dplyr::mutate(msmcFiles=str_replace(msmcFiles, pattern="../data/resequenced/", replacement = "")) %>%
+  mutate(individuals=str_replace(msmcFiles, pattern=".final.txt", "")) %>% filter(Time==0)
+
+test=test %>%
+  mutate(files=str_replace(files, "/u/flashscratch/j/jessegar/FilteringResequenceHighP", replacement = "")) %>%
+  mutate(files=str_replace(files, pattern = ".final.txt", replacement=""))
+
+test<-test %>% mutate(individuals=coalesce(individuals, files))
+
+test<-left_join(test,mutationRateMSMC) %>% filter(Time==0)
+
+
+
+test %>% 
+  ggplot(aes(x=mutationRate,y=EffectivePopulationSize, colour=individuals)) +
+  geom_point() + 
+  theme_bw() + 
+  labs(x="Heterozygosity (Segregating Sites/Callable Sites/Waterson/2)", y="Effective Population Size At Time 0") +
+  theme_bw() + 
+  gghighlight(individuals %in% c("/QL.BER.1.00F", "/QL.HV.1.00F")) +
+    theme(text = element_text(size=18))
+```
+
+
+
+
+
+
+
+## Mean Ne across all of Time and Mean Coverage doesn't appear correlated
+```{r}
+
+test=allResequenced %>% dplyr::mutate(msmcFiles=str_replace(msmcFiles, pattern="../data/resequenced/", replacement = "")) %>%
+  mutate(individuals=str_replace(msmcFiles, pattern=".final.txt", ""))
+
+
+test=test %>%
+  mutate(files=str_replace(files, "/u/flashscratch/j/jessegar/FilteringResequenceHighP", replacement = "")) %>%
+  mutate(files=str_replace(files, pattern = ".final.txt", replacement=""))
+
+test<-test %>% mutate(individuals=coalesce(individuals, files))
+
+test<-left_join(test,mutationRateMSMC)
+
+test %>% 
+  group_by(individuals, mutationRate, mean) %>% 
+  summarise(meanNe=mean(EffectivePopulationSize)) %>%
+  ggplot(aes(x=mean,y=meanNe, colour=individuals)) +
+  geom_point() + 
+  theme_bw() + 
+  labs(x="Mean Coverage (MQ > 20)", y="Mean Effective Population Size Across Time") +
+  theme_bw() + 
+  gghighlight(individuals %in% c("/QL.BER.1.00F", "/QL.HV.1.00F")) +
+    theme(text = element_text(size=18))
+
+
+
+```
+
+
+
+```{r}
+
+
+bed %>% map2(bed$chromosome)
+
+```
+
