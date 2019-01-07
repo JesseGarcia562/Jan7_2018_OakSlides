@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>January 7, 2018 Lab Meeting</title>
+    <meta charset="utf-8">
+    <meta name="date" content="2019-01-07" />
+    <link href="libs/remark-css/default.css" rel="stylesheet" />
+    <link href="libs/remark-css/default-fonts.css" rel="stylesheet" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# January 7, 2018 Lab Meeting
+### 2019-01-07
+
+---
+
+
+
+
+
+
+# psmc2msprime package
+
+
+```r
+devtools::install_github("jessegarcia562/psmc2msprime")
+```
+
+- Similar to Annabel's psmc 2 maCS script. Except implemented in R and using msprime instead of maCS
+- Turns msmc output into Effective Population Sizes and Generations Ago using a given mutation rate, and then creates msprime function
+- msprime has a "demography debugger"
+- maCS you have to "scale relative to oldest time in inference" 
+---
+## Different settings of PSMC lead to big differences in the ancient and present time steps
+
+&lt;img src="JG_Jan7_2018_Labmeeting_files/figure-html/unnamed-chunk-2-1.svg" width="\textwidth" height="450px" style="display: block; margin: auto;" /&gt;
+
+---
+### We can assess model fit by comparing **expected** heterozygosity of a given demography with the **measured** heterozygosity from empirical data sets
+
+
+&lt;img src="JG_Jan7_2018_Labmeeting_files/figure-html/unnamed-chunk-3-1.svg" width="100%" height="450px" style="display: block; margin: auto;" /&gt;
+---
+### I'm trying to recreate this figure Ying made. By trimming ancient time steps from inferred PSMC demography she was able to get simulated heterozygosity close to empirical heterozygosity
+
+
+
+&lt;img src="pi_distribution.png" width="100%" height="450px" style="display: block; margin: auto;" /&gt;
+
+
+
+
+
+
+
+
+
+---
+
+
+### And this one annabel made
+&lt;img src="manuscriptMSMCFigure.Trajectory.SimulatedHet.Combo.PinkArrow.20180814.png" width="900px" height="450px" style="display: block; margin: auto;" /&gt;
+---
+### Simulating under the Q. lobata reference genome demographic history requires less trimming of the past
+&lt;img src="JG_Jan7_2018_Labmeeting_files/figure-html/unnamed-chunk-7-1.svg" width="900px" height="450px" style="display: block; margin: auto;" /&gt;
+
+
+
+
+---
+
+### Need to trim more of the ancient time steps to match empirical heterozygosity if running for more than 200 iterations
+
+&lt;img src="JG_Jan7_2018_Labmeeting_files/figure-html/unnamed-chunk-9-1.svg" width="100%" height="450px" style="display: block; margin: auto;" /&gt;
+
+---
+
+
+### By trimming time out of PSMC inference we can get the simulated mean heterozygosity closer to the empirical mean
+&lt;img src="JG_Jan7_2018_Labmeeting_files/figure-html/unnamed-chunk-11-1.svg" width="100%" height="450px" /&gt;
+
+---
+
+### Time I'd need to cut off from PSMC inference after 20 iterations
+
+&lt;img src="JG_Jan7_2018_Labmeeting_files/figure-html/unnamed-chunk-12-1.svg" width="100%" height="450px" /&gt;
+
+---
+
+
+### PSMC' inference on msprime simulated genomes resembles true demography . 
+
+
+&lt;img src="JG_Jan7_2018_Labmeeting_files/figure-html/unnamed-chunk-13-1.svg" width="900px" height="450px" /&gt;
+
+
+---
+
+
+
+
+
+
+
+
+### Different amount of time to trim if using mean of resequenced pi in 500kb windows or reference genome whole genome pi
+
+
+- Q. lobata reference whole genome pi is 0.005000028
+- Q. lobata resequenced mean pi across 500kb windows is .00860
+
+
+
+
+&lt;img src="JG_Jan7_2018_Labmeeting_files/figure-html/unnamed-chunk-14-1.svg" width="100%" height="400px" /&gt;
+
+
+---
+
+## Bar plots like annabel makes in her otter paper but for oaks
+
+
+
+
+
+
+&lt;img src="JG_Jan7_2018_Labmeeting_files/figure-html/unnamed-chunk-16-1.svg" width="800px" height="400px" /&gt;
+
+
+
+
+---
+
+
+
+## Questions
+
+- Do we try to trim less time points to match empirical heterozygosity (use PSMC' after 20 iterations) or try to have demographies from resequenced genomes closely match the reference genome (use PSMC' after 200 iterations)
+
+- Do we try to match the reference genome heterozygosity or resequenced genome heterozygosity?
+    </textarea>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function() {
+  var d = document, s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})();</script>
+
+<script>
+(function() {
+  var i, text, code, codes = document.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+})();
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
